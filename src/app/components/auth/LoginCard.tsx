@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React from "react";
 import { useAuth } from "@/app/contexts/AuthContext";
 import {
   Card,
@@ -25,12 +25,10 @@ import { useForm } from "react-hook-form";
 import { loginSchema } from "@/lib/validations/auth";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useRouter, usePathname } from "next/navigation";
+import Link from "next/link";
 
 function LoginCard() {
   const { user, loading } = useAuth();
-  const router = useRouter();
-  const pathname = usePathname();
   const form = useForm<z.infer<typeof loginSchema>>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
@@ -46,16 +44,8 @@ function LoginCard() {
     login(formData);
   }
 
-  useEffect(() => {
-    if (!loading && user) {
-      if (pathname === "/" || pathname === "/login") {
-        router.push("/user-dashboard");
-      }
-    }
-  }, [loading, user, router, pathname]);
-
   if (loading) return <p>Loading...</p>;
-  if (user) return null;
+  if (user) return <Link href="/admin">Dashboard</Link>;
 
   return (
     <Card className="w-full h-fit max-w-md">

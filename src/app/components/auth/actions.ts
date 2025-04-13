@@ -36,40 +36,65 @@ export async function login(formData: FormData) {
   }
 
   // 4. Validation passed - proceed with Supabase auth
-  const { error } = await supabase.auth.signInWithPassword({
+  const { error: signInError } = await supabase.auth.signInWithPassword({
     email: validationResult.data.email, // Use validated data
     password: validationResult.data.password, // Use validated data
   })
 
-  if (error) {
-    console.error("Supabase login error:", error.message)
+  if (signInError) {
+    console.error("Supabase login error:", signInError.message)
     // Redirect back to login page with a generic error
     // Or return an error object like in step 3
     return redirect('/login?error=Could not authenticate user')
   }
 
-  // 5. Login successful - redirect to a protected page
-  revalidatePath("/", "layout");
-  return redirect("/user-dashboard"); // Or wherever users go after login
-}
+  // 5. Login successful - Fetch user object *and* role from DB
+  // First, get the user object to obtain the ID
+  const { data: { user }, error: getUserError } = await supabase.auth.getUser();
 
-export async function signup(formData: FormData) {
-  const supabase = await createClient()
-
-  // type-casting here for convenience
-  // in practice, you should validate your inputs
-  const data = {
-    email: formData.get('email') as string,
-    password: formData.get('password') as string,
+  if (getUserError || !user) {
+      console.error("Error fetching user after login:", getUserError?.message);
+      // Handle appropriately - maybe return an error to the form
+      return {
+        success: false,
+        message: "Login successful, but could not retrieve user details.",
+      };
+      // Previous: return redirect('/login?error=Could not retrieve user details');
   }
 
-  const { error } = await supabase.auth.signUp(data)
+  // Now, fetch the role from the database using the user ID
+  let userRole: string | null = null;
+  try {
+      // Adjust table/column names ('user_profiles', 'user_id', 'role') if yours are different
+      const { data: profileData, error: profileError } = await supabase
+      .from('user_roles') // Your table name
+      .select('role_id')       // The column containing the role
+      .eq('user_id', user.id) // Match the user ID
+      .single();           // Expect only one profile per user
 
-  if (error) {
-    console.log(error);
-    redirect("/error");
+      if (profileError) {
+        console.error(`Error fetching profile for user ${user.id} after login:`, profileError.message);
+        // Decide how to handle - maybe a generic user role or an error message
+        userRole = 'user'; // Defaulting to 'user' for safety/simplicity here
+      } else if (profileData) {
+        userRole = profileData.role_id;
+      } else {
+        console.warn(`No profile found for user ${user.id} after login.`);
+        userRole = 'user'; // Defaulting to 'user' if no profile found
+      }
+  } catch (e) {
+      console.error('Exception fetching user profile after login:', e);
+      userRole = 'user'; // Defaulting to 'user' on exception
   }
 
-  revalidatePath("/", "layout");
-  redirect("/login");
+  // --- Role-based Redirect ---
+  revalidatePath("/", "layout"); // Revalidate before redirect
+
+  if (Number(userRole) === 2) {
+    console.log(`Redirecting admin user ${user.id} to admin dashboard.`);
+    return redirect("/admin-dashboard"); // Redirect admins
+  } else {
+    console.log(`Redirecting non-admin user ${user.id} to user dashboard.`);
+    return redirect("/user-dashboard"); // Redirect non-admins
+  }
 }
